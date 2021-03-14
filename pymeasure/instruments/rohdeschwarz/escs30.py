@@ -29,81 +29,382 @@ from enum import Enum
 
 
 class AttenuationMode(Enum):
-	LOW_NOISE 		= "LOWNOISE"
-	LOW_DISTORTION 	= "LOWDISTORTION"
+	LOW_NOISE 		= "LOWN"
+	LOW_DISTORTION 	= "LOWD"
 
 class IFBandWidth(Enum):
-	pass
+	IF_200HZ		= "200 H"
+	IF_9KHZ			= "9 K"
+	IF_120KHZ		= "120 K"
+	IF_1MHZ			= "1 M"
 
 class DemodulationMode(Enum):
-	FM 				= "FM"
+	FM 				= "F"
 	AM 				= "AM"
 	ZEROBEAT 		= "A0"
-	OFF 			= "OFF"
+	OFF 			= "O"
 
 class DetectionMode(Enum):
-	AVG 			= "AVERAGE"
-	PEAK 			= "PEAK"
-	QUASIPEAK 		= "QUASIPEAK"
-	RMS 			= "RMS"
+	AVG 			= "A"
+	PEAK 			= "P"
+	QUASIPEAK 		= "Q"
+	RMS 			= "R"
 
+class FrequencyVariation(Enum):
+	STEP 			= "S"
+	COARSE			= "C"
+	FINE			= "F"
+	LOCK			= "L"
 
+class DataFormat(Enum):
+	ASCII			= "AS"
+	BINARY			= "BIN"
+
+class AnalysisMode(Enum):
+	RF				= "R"
+	IF				= "I"
+
+class LinLog(Enum):
+	LINEAR			= "LI"
+	LOGARITHMIC		= "LO"
+
+class ScanMode(Enum):
+	CHANNEL			= "C"
+	NORMAL			= "N"
+	OVERVIEW		= "O"
+	TIME_DOMAIN		= "T"
+
+class DisplayStyle(Enum):
+	CURVE 			= "C"
+	LINE 			= "L"
 
 class ESCS30(Instrument):
-    """ Represents the Rohde&Schwarz ESCS30 EMV Measurement Receiver
-    """
+	""" Represents the Rohde&Schwarz ESCS30 EMV Measurement Receiver
+	"""
 
 
 
-    id = Instrument.measurement("*IDN?", """Reads the instrument identification string """)
+	id = Instrument.measurement("*IDN?", """Reads the instrument identification string """)
 
-    cal_correction = Instrument.setting(
-    	"CALIBRATION:CORRECTION %s",
-    	"""Apply calibration correction during power measurement""",
-    	validator=truncated_discrete_set,
-    	values={True : "ON",False : "OFF"},
-    	map_values=True)
+	cal_correction = Instrument.setting(
+		"CALIBRATION:CORRECTION %s",
+		"""Apply calibration correction during power measurement""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
 
-    attenuation = Instrument.control(
-    	"ATTENUATION?", "ATTENUATION %ddB",
-    	"""Set instrument attenuation (0dB .. 60dB)""",
-    	validator=strict_range,
-    	values=[0, 60],
-    	get_process=lambda str: str.replace('DB', '') )
+	attenuation = Instrument.control(
+		"A?", "A %d DB",
+		"""Set instrument attenuation (0dB .. 60dB)""",
+		validator=strict_range,
+		values=[0, 60],
+		get_process=lambda str: str.replace('DB', '') )
 
-    attenuation_mode = Instrument.control(
-    	"ATTENUATION:MODE?", "ATTENUATION:MODE?",
-    	"""Attenuator mode [LOW_NOISE | LOW_DISTORTION]""",
-    	validator=truncated_discrete_set,
-    	values=AttenuationMode,
-    	map_values=True)
+	def incrementAttenuation():
+		self.ask("A:I")
 
-    preamp_enabled = Instrument.control(
-    	"PREAMPLIFIER?", "PREAMPLIFIER %s",
-    	"""Enables or disables the integrated preamplifier""",
-    	validator=truncated_discrete_set,
-    	values={True : "ON",False : "OFF"},
-    	map_values=True)
+	def decrementAttenuation():
+		self.ask("A:D")
 
-    single_measurement = Instrument.control(
-    	"MEASUREMENT:SINGLE?", "MEASUREMENT:SINGLE %s",
-    	"""When True, only aquire a single measurement instead of running continuously""",
-    	validator=truncated_discrete_set,
-    	values={True : "ON",False : "OFF"},
-    	map_values=True)
+	use_autoranging = Instrument.control(
+		"A:A?", "A:A %s",
+		"""Allow attenuation autorange""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	attenuation_mode = Instrument.control(
+		"A:M?", "A:M?",
+		"""Attenuator mode: {}""".format([mode.name for mode in AttenuationMode]),
+		validator=truncated_discrete_set,
+		values=AttenuationMode,
+		map_values=True)
+
+	autorange_includes_preamp = Instrument.control(
+		"A:P?", "A:P %s",
+		"""Enables or disables the use of the internal preamplifier in autoranging""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	zero_scale_deflection = Instrument.measurement("A:Z?", """Zero Scale Deflection""")
+
+	if_bandwidth = Instrument.control(
+		"B:I?", "B:I %s",
+		"""IF bandwidth selection: {}""".format([bw.name for bw in IFBandWidth]),
+		validator=truncated_discrete_set,
+		values=IFBandWidth,
+		map_values=True)
+
+	demodulation_mode = Instrument.control(
+		"DEM?", "DEM %s",
+		"""Sets the demodulation mode: {}""".format([mode.name for mode in DemodulationMode]),
+		validator=truncated_discrete_set,
+		values=DemodulationMode,
+		map_values=True)
+
+	detector_mode = Instrument.control(
+		"DET?", "DET %s",
+		"""Sets the detection mode: {}""".format([mode.name for mode in DetectionMode]),
+		validator=truncated_discrete_set,
+		values=DetectionMode,
+		map_values=True)
+
+	# TODO: Combined Validator and formatter for SI Units instead of plain kHz numbers
+	frequency = Instrument.control(
+		"FR?", "FR %d",
+		"""Reception Frequency (9kHz .. 2750MHz) in kHz""",
+		validator=strict_range,
+		values=[9, 2750e3])
+
+	def incrementFrequency():
+		self.ask("FR:I")
+
+	def decrementFrequency():
+		self.ask("FR:D")
+
+	frequency_variation = Instrument.control(
+		"FR:V?", "FR:V %s",
+		"""Sets the step size of the internal knob: {}""".format([var.name for var in FrequencyVariation]),
+		validator=truncated_discrete_set,
+		values=FrequencyVariation,
+		map_values=True)
+
+	use_extref = Instrument.control(
+		"FR:E?", "FR:E %s",
+		"""Enables or disables the external frequency reference""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	use_generator = Instrument.control(
+		"G?", "G %s",
+		"""Enables or disables the internal tracking generator""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	level = Instrument.measurement("LE?", """Starts a power measurement and returns the value""")
+
+	# Skip Continue and Lastvalue
+
+	data_format = Instrument.control(
+		"LE:F?", "LE:F %s",
+		"""Result format: {}""".format([element.name for element in DataFormat]),
+		validator=truncated_discrete_set,
+		values=DataFormat,
+		map_values=True)
+
+	measurement_time = Instrument.control(
+		"ME:T?", "ME:T %d",
+		"""Time for a M power measurement (0.1ms .. 100s) in ms""",
+		validator=strict_range,
+		values=[0.1, 100e3])
+
+	M_measurement = Instrument.control(
+		"MEASUREMENT:M?", "MEASUREMENT:M %s",
+		"""When True, only aquire a M measurement instead of running continuously""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	use_preamp = Instrument.control(
+		"PREA?", "PREA %s",
+		"""Enables or disables the internal preamplifier""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	# Skip SpecialFunction
+
+	unit = Instrument.measurement("UN?", """Requests the unit of measurement""")
+
+	analysis_mode = Instrument.control(
+		"MO?", "MO %s",
+		"""Sets the analysis mode: {}""".format([mode.name for mode in AnalysisMode]),
+		validator=truncated_discrete_set,
+		values=AnalysisMode,
+		map_values=True)
+
+	grid_division = Instrument.control(
+		"GR:FR?", "GR:FR %s",
+		"""Sets the axis division: {}""".format([div.name for div in LinLog]),
+		validator=truncated_discrete_set,
+		values=LinLog,
+		map_values=True)
+
+	grid_minlevel = Instrument.control(
+		"GR:MI?","GR:MI %dD",
+		"""Minimal level displayed in the power diagram (-200dB .. 200dB)""",
+		validator=strict_range,
+		values=[-200,200])
+
+	grid_maxlevel = Instrument.control(
+		"GR:MA?","GR:MA %dD",
+		"""Maximum level displayed in the power diagram (-200dB .. 200dB)""",
+		validator=strict_range,
+		values=[-200,200])
+
+	scan_selector = Instrument.control(
+		"SC?","SC %d",
+		"""Current selected partial scanning interval (1 .. 5)""",
+		validator=strict_range,
+		values=[1,5])
+
+	# Skip Scan Run because I don't fully understand the logic 
+	# behind the handling of scattered scanning yet
+
+	interrupt_scan = Instrument.setting("SC:I", """Interrupts a repetitive scan in progress""")
+	continue_scan = Instrument.setting("SC:CO", """Continues previously aborted scan""")
+	stop_scan     = Instrument.setting("SC:ST", """Ends the currently running scan""")
+
+	scan_mode = Instrument.control(
+		"SC:M?", "SC:M %s",
+		"""Sets the analysis mode: {}""".format([mode.name for mode in ScanMode]),
+		validator=truncated_discrete_set,
+		values=ScanMode,
+		map_values=True)
+
+	scan_range = Instrument.control(
+		"SC:RA?","SC:RA %d",
+		"""Number of scans to be executed (1 .. 5)""",
+		validator=strict_range,
+		values=[1,5])
+
+	scan_start_frequency = Instrument.control(
+		"SC:STA?","SC:STA %d",
+		"""Start frequency of partial scan in kHz""",
+		validator=strict_range,
+		values=[9,2750e3])
+
+	scan_stop_frequency = Instrument.control(
+		"SC:STA?","SC:STA %d",
+		"""Stop frequency of partial scan in kHz""",
+		validator=strict_range,
+		values=[9,2750e3])
+
+	scan_stepmode = Instrument.control(
+		"SC:STEPM?", "SC:STEPM %s",
+		"""Sets the step division: {}""".format([div.name for div in LinLog]),
+		validator=truncated_discrete_set,
+		values=LinLog,
+		map_values=True)
+
+	# Combined validator should be used in case of logarighmic steps
+	scan_stepsize = Instrument.control(
+		"SC:STEPS?","SC:STEPS %d K",
+		"""Step size in kHz for linear steps and in \% for logarithmic steps""",
+		validator=strict_range,
+		values=[0,2750e3])
+
+	def saveScanParameter():
+		self.ask("SC:SA")
+
+	scan_timeout = Instrument.setting(
+		"SC:T %d",
+		"""Specifies a timeout for time analysis in ms""",
+		validator=strict_range,
+		values=[5,10000e3])
+
+	scan_measurement_time = Instrument.control(
+		"SC:RE:MT?", "SC:RE:MT %d",
+		"""Time for a power measurement (0.1ms .. 100s) in the partial scan in ms""",
+		validator=strict_range,
+		values=[0.1, 100e3])
+
+	scan_if_bandwidth = Instrument.control(
+		"SC:B:I?", "SC:B:I %d",
+		"""IF Filter Bandwidth for partial scan range (200Hz .. 1MHz) in Hz""",
+		validator=strict_range,
+		values=[200, 100e6])
+
+	scan_attenuation = Instrument.control(
+		"SC:RE:A?", "SC:RE:A %d D",
+		"""RF attenuation for partial scan range (0dB .. 60dB)""",
+		validator=strict_range,
+		values=[0, 60])
+
+	scan_use_autoranging = Instrument.control(
+		"SC:RE:A:A?", "SC:RE:A:A %s",
+		"""Use autoranging within the partial scan range""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	scan_attenuation_mode = Instrument.control(
+		"SC:RE:A:M?", "SC:RE:A:M %s",
+		"""Attenuation mode for scan range: {}""".format([mode.name for mode in AttenuationMode]),
+		validator=truncated_discrete_set,
+		values=AttenuationMode,
+		map_values=True)
+
+	scan_number_subranges = Instrument.control(
+		"SC:O:SU?","SC:O:SU %d",
+		"""Specifies the number of subranges: (8,16,25,50,100,200,400)""",
+		validator=truncated_discrete_set,
+		values=[8,16,25,50,100,200,400]) 
+
+	scan_fast = Instrument.control(
+		"SC:O:FA?", "SC:O:FA %s",
+		"""Use autoranging within the partial scan range""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	scan_margin = Instrument.control(
+		"SC:O:M?", "SC:O:M %d D",
+		"""Sets the minimal margin of the acceptance line to the limit""",
+		validator=strict_range,
+		values=[-200, 200])
+
+	scan_special = Instrument.control(
+		"SC:O:SP?", "SC:O:SP %s",
+		"""Channel Scan setting""",
+		validator=truncated_discrete_set,
+		values={True : "ON",False : "OFF"},
+		map_values=True)
+
+	scan_special_style = Instrument.control(
+		"SC:O:SP:S?", "SC:O:SP:S %s",
+		""""Display Style of measurements""",
+		validator=truncated_discrete_set,
+		values=DisplayStyle,
+		map_values=True)
+
+	scan_special_min_level = Instrument.control(
+		"SC:O:SP:MINL?","SC:O:SP:MINL %dD",
+		"""Minimal level displayed in the power diagram (-200dB .. 200dB)""",
+		validator=strict_range,
+		values=[-200,200])
+
+	scan_special_max_level = Instrument.control(
+		"SC:O:SP:MAXL?","SC:O:SP:MAXL %dD",
+		"""Maximum level displayed in the power diagram (-200dB .. 200dB)""",
+		validator=strict_range,
+		values=[-200,200])
+
+	scan_special_min_frequency = Instrument.control(
+		"SC:O:SP:MINF?","SC:O:SP:MINF %d K",
+		"""Minimum frequency displayed in the power diagram in kHz""",
+		validator=strict_range,
+		values=[9,2750e3])
+
+	scan_special_max_frequency = Instrument.control(
+		"SC:O:SP:MAXF?","SC:O:SP:MAXF %d K",
+		"""Maximum frequency displayed in the power diagram in khz""",
+		validator=strict_range,
+		values=[-200,2750e3])
 
 
+	def __init__(self, resourceName, **kwargs):
+		super().__init__(
+			resourceName,
+			"ESCS 30",
+			**kwargs
+		)
 
-
-    def __init__(self, resourceName, **kwargs):
-        super().__init__(
-            resourceName,
-            "ESCS 30",
-            **kwargs
-        )
-
-        def check_errors():
-        	pass
+	def check_errors():
+		pass
 
 
 
@@ -117,6 +418,7 @@ def setAttenuation(att, autorange=None,mode=None,preamp=None):
 		self.attenuation_mode = mode
 	if preamp:
 		self.preamp_enabled = preamp
+
 
 
 system_error = {	0 : "No error",
